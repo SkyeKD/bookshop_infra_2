@@ -110,7 +110,7 @@ jobs:
           chmod 400 ~/.ssh/bookshop-key.pem
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
             echo "clone repository..."
-            git clone https://github.com/ztao-8/DevOps_bookshop.git source-code
+            git clone https://github.com/SkyeKD/bookshop_2.git source-code
             cd source-code
       
             echo "Docker Compose..."
