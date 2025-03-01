@@ -212,10 +212,20 @@ jobs:
             export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
             export AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
             export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+            export AWS_REGION=${{ env.AWS_REGION }}
+            export ECR_REGISTRY="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+            export ECR_BACKEND="bookshop-backend"
+            export ECR_FRONTEND="bookshop-frontend"
+            
+            echo "🔍 Checking AWS Region and Registry..."
+            echo "ECR_BACKEND: $ECR_BACKEND"
+            echo "ECR_REGISTRY: $ECR_REGISTRY"
 
-
-            echo "Logging in to AWS ECR..."
-            aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
+            echo "🔓 Logging in to AWS ECR..."
+            aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY || {
+              echo "❌ AWS ECR login failed!"
+              exit 1
+            }
 
             echo "Cloning Source Code Repo..."
             if [ ! -d "app" ]; then
