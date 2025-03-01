@@ -1,0 +1,155 @@
+name: Nightly Deployment & Smoke Test
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  
+  workflow_dispatch:  
+
+jobs:
+  deploy-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout Infra Repo
+        uses: actions/checkout@v4
+
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-west-2 
+      
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/bookshop-key.pem
+          chmod 400 ~/.ssh/bookshop-key.pem
+      # echo "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/bookshop-key.pem
+      # run deploy-ec2.sh 
+      - name: Deploy EC2 Instance
+        run: |
+          set -e
+          chmod +x scripts/deploy-ec2.sh
+          ./scripts/deploy-ec2.sh
+          sleep 10
+
+      # get  EC2 Public IP
+      - name: Get EC2 Public IP
+        run: |
+          if [ -f ec2_ip.txt ]; then
+            echo "EC2_PUBLIC_IP=$(cat ec2_ip.txt)" >> $GITHUB_ENV
+          else
+            echo "❌ Error: No EC2 IP found!"
+            exit 1
+          fi
+      
+      - name: Debug EC2 Public IP
+        run: cat ec2_ip.txt || echo "No EC2 IP found!"
+        
+      - name: Test SSH Connection
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} "echo 'SSH Connection Successful'"
+ 
+      - name: Wait for EC2 to be ready
+
+        run: |
+          if [ -z "${{ env.EC2_PUBLIC_IP }}" ]; then
+            echo "❌ EC2_PUBLIC_IP is empty. Cannot proceed."
+            exit 1
+          fi
+          
+          echo "Waiting for EC2 SSH access..."
+          chmod 400 ~/.ssh/bookshop-key.pem
+          until ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} "echo 'EC2 is ready'"
+          do
+            sleep 10
+          done
+
+      - name: SSH into EC2 and install Docker & Docker Compose
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.EC2_PUBLIC_IP }} 
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            sudo apt update -y
+            sudo apt upgrade -y
+
+            echo "📦 Installing Docker..."
+            sudo apt update && sudo apt install -y docker.io docker-compose git
+            sudo systemctl start docker
+            sudo usermod -aG docker $USER
+            newgrp docker
+            sleep 10
+
+            echo "✅ Docker Version: $(docker --version || echo '❌ Docker installation failed!')"
+            echo "✅ Docker Compose Version: $(docker-compose --version || echo '❌ Docker Compose installation failed!')"
+
+            echo "🚀 Setup Complete!"
+
+      - name: Free up port 3307 before starting MySQL
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
+            echo "🔍 Checking for processes using port 3306..."
+            if sudo lsof -i :3307; then
+              echo "⚠️ Port 3307 is in use, stopping process..."
+              sudo fuser -k 3307/tcp || echo "Failed to kill process"
+            else
+              echo "✅ Port 3307 is free"
+            fi
+          EOF
+
+      # connect to EV2 and run Smoke Test
+      - name: Run Smoke Test on EC2
+        run: |
+          chmod 400 ~/.ssh/bookshop-key.pem
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
+            echo "clone repository..."
+            git clone https://github.com/ztao-8/DevOps_bookshop.git source-code
+            cd source-code
+      
+            echo "Docker Compose..."
+            sudo docker-compose up -d
+            
+            sleep 10
+
+
+            echo "🔍 Checking if frontend is running..."
+            curl -Isf http://localhost:3000 || (echo "❌ frontend not responding!" && exit 1)
+            
+            # echo "🔍 Checking if backend is running..."
+            curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
+            echo "✅ Smoke Test Passed!"
+          EOF
+    # echo "🔍 Checking if backend is running..."
+    # curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
+      
+      # - name: Stop and Remove All Docker Containers
+      #   run: |
+      #     ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
+      #       echo "🛑 Stopping all running containers..."
+      #       docker stop $(docker ps -aq) || echo "No running containers"
+      #       docker rm $(docker ps -aq) || echo "No containers to remove"
+            
+      #       echo "🧹 Cleaning up Docker system..."
+      #       docker system prune -a -f
+      #       docker volume prune -f
+      #       docker network prune -f
+      #     EOF
+
+      # end EC2
+      # - name: Terminate EC2 Instance
+      #   if: always()
+      #   run: |
+      #     INSTANCE_ID=$(cat ec2-instance-id.env)
+      #     if [ -z "$INSTANCE_ID" ]; then
+      #       echo "❌ No EC2 Instance ID found, skipping termination."
+      #     else
+      #       aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+      #       echo "✅ EC2 Instance $INSTANCE_ID Terminated!"
+      #     fi
