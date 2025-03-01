@@ -48,6 +48,7 @@ jobs:
     
       - name: Build and Start Containers Using Docker Compose
         run: |
+          cd app
           docker compose up -d
           sleep 20
 
