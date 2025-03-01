@@ -289,43 +289,35 @@ jobs:
         run: |
           echo "❌ Smoke Test Failed! Removing ECR images..."
 
-          LATEST_FRONTEND_TAG=$(aws ecr list-images --repository-name bookshop-frontend \
-            --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r | head -n 1)
-          LATEST_BACKEND_TAG=$(aws ecr list-images --repository-name bookshop-backend \
-            --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r | head -n 1)
-  
           PRE_FRONTEND_IMAGE_TAG=$(aws ecr list-images --repository-name bookshop-frontend  \
             --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
           PRE_BACKEND_IMAGE_TAG=$(aws ecr list-images --repository-name bookshop-backend \
             --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
           
           echo "🔍 Debugging ECR Cleanup..."
-          echo "📌 Latest frontend tag: $LATEST_FRONTEND_TAG"
-          echo "📌 Latest backend tag: $LATEST_BACKEND_TAG"
           echo "📌 Current TIMESTAMP: $TIMESTAMP"
           echo "📌 Previous frontend tag (should become latest): $PRE_FRONTEND_IMAGE_TAG"
           echo "📌 Previous backend tag (should become latest): $PRE_BACKEND_IMAGE_TAG"
 
-
-          [ -n "$LATEST_FRONTEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=$LATEST_FRONTEND_TAG || true
+          aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=${{ env.TIMESTAMP }}
           aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=${{ env.IMAGE_TAG }}
-          [ -n "$LATEST_BACKEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=$LATEST_BACKEND_TAG || true
+          aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=${{ env.TIMESTAMP }}
           aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=${{ env.IMAGE_TAG }}
  
           if [ -n "$PRE_FRONTEND_IMAGE_TAG" ]; then
             echo "🔄 Tagging frontend image $PRE_FRONTEND_IMAGE_TAG as latest..."
             
             aws ecr batch-get-image --repository-name bookshop-frontend --image-ids imageTag=$PRE_FRONTEND_IMAGE_TAG \
-              --query 'images[0].imageManifest' --output text > image_manifest.json
+              --query 'images[0].imageManifest' --output text > image_manifest_frontend.json
 
-            if [ -s image_manifest.json ]; then
-              aws ecr put-image --repository-name bookshop-frontend --image-tag ${{ env.IMAGE_TAG }} --image-manifest file://image_manifest.json
+            if [ -s image_manifest_frontend.json ]; then
+              aws ecr put-image --repository-name bookshop-frontend --image-tag ${{ env.IMAGE_TAG }} --image-manifest file://image_manifest_frontend.json
               echo "✅ Successfully tagged frontend $PRE_FRONTEND_IMAGE_TAG as latest."
             else
               echo "❌ Failed to retrieve image manifest for frontend."
             fi
 
-            rm -f image_manifest.json
+            rm -f image_manifest_frontend.json
           else
             echo "❌ No previous frontend image found. Skipping."
           fi
@@ -334,16 +326,16 @@ jobs:
             echo "🔄 Tagging backend image $PRE_BACKEND_IMAGE_TAG as latest..."
 
             aws ecr batch-get-image --repository-name bookshop-backend --image-ids imageTag=$PRE_BACKEND_IMAGE_TAG \
-              --query 'images[0].imageManifest' --output text > image_manifest.json
+              --query 'images[0].imageManifest' --output text > image_manifest_backend.json
 
-            if [ -s image_manifest.json ]; then
-              aws ecr put-image --repository-name bookshop-backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest file://image_manifest.json
+            if [ -s image_manifest_backend.json ]; then
+              aws ecr put-image --repository-name bookshop-backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest file://image_manifest_backend.json
               echo "✅ Successfully tagged backend $PRE_BACKEND_IMAGE_TAG as latest."
             else
               echo "❌ Failed to retrieve image manifest for backend."
             fi
 
-            rm -f image_manifest.json
+            rm -f image_manifest_backend.json
           else
             echo "❌ No previous backend image found. Skipping."
           fi
