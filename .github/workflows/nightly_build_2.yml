@@ -113,7 +113,7 @@ jobs:
             exit 1
           fi
 
-            - name: Debug EC2 Public IP
+      - name: Debug EC2 Public IP
         run: cat ec2_ip.txt || echo "No EC2 IP found!"
         
       - name: Test SSH Connection
