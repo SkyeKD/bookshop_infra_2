@@ -185,14 +185,18 @@ jobs:
             echo "🔍 Checking AWS CLI installation..."
             if ! command -v aws &> /dev/null; then
               echo "🚀 Installing AWS CLI..."
-              sudo apt update -y
-              sudo apt install -y awscli
+              
+              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+              unzip awscliv2.zip
+              
+              sudo ./aws/install
+              
+              rm -rf awscliv2.zip aws
+              
             else
               echo "✅ AWS CLI already installed."
             fi
-            echo "AWS CLI Version:"
-            aws --version || echo "❌ AWS CLI installation failed!"
-
+    
             echo "Logging in to AWS ECR..."
             aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
 
