@@ -20,14 +20,7 @@ jobs:
       SOURCE_REPO: https://github.com/SkyeKD/bookshop_2.git  
 
     steps:
-      # - name: Checkout Infra Repo
-      #   uses: actions/checkout@v4
-      
-      # - name: Checkout Source Repo
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: "SkyeKD/bookshop_2"  
-      
+   
       - name: Checkout Infra Repo
         uses: actions/checkout@v4
         with:
@@ -176,37 +169,98 @@ jobs:
             echo "✅ Docker Compose Version: $(docker-compose --version || echo '❌ Docker Compose installation failed!')"
 
             echo "🚀 Setup Complete!"
+      
+      - name: Pull ECR Image & Deploy Using Docker Compose
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
+            set -e
+            AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
+            AWS_REGION="${{ env.AWS_REGION }}"
+            ECR_FRONTEND="${{ env.ECR_REPOSITORY_FRONTEND }}"
+            ECR_BACKEND="${{ env.ECR_REPOSITORY_BACKEND }}"
+            ECR_REGISTRY="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
-      # - name: Pull Images on Temporary EC2 and Run Smoke Tests
-      #   run: |
-      #     PUBLIC_DNS=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} \
-      #       --query 'Reservations[0].Instances[0].PublicDnsName' \
-      #       --output text)
-      #     echo "PUBLIC_DNS=$PUBLIC_DNS" >> $GITHUB_ENV
-      #     scp -i ec2-key.pem -o StrictHostKeyChecking=no app/docker-compose-test.yml ec2-user@$PUBLIC_DNS:~/
-      #     ssh -i ec2-key.pem -o StrictHostKeyChecking=no ec2-user@$PUBLIC_DNS << EOF
-      #       sudo yum install -y docker
-      #       sudo service docker start
-      #       sudo chkconfig docker on
-      #       sudo usermod -aG docker ec2-user
-      #       sudo curl -L https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose
-      #       sudo chmod +x /usr/local/bin/docker-compose
-      #       newgrp docker
-      #       docker --version
-      #       docker-compose version
+            echo "Logging in to AWS ECR..."
+            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
 
-      #       export AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
-      #       export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-      #       export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #       export AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
-      #       export AWS_REGION=${{ env.AWS_REGION }}
+            echo "Cloning Source Code Repo..."
+            if [ ! -d "app" ]; then
+              git clone https://github.com/SkyeKD/bookshop_2.git app
+            else
+              cd app && git pull && cd ..
+            fi
 
-      #       aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.\$AWS_REGION.amazonaws.com
-      #       docker-compose -f docker-compose-test.yml up -d
-      #       sleep 10
+            cd app || exit 1 
 
-      #       curl -o /dev/null -s -w "%{http_code}\n" http://localhost:5173/ | grep -q 200 || exit 1
-      #     EOF
+            if [ ! -f docker-compose.yml ]; then
+              echo "❌ docker-compose.yml not found! Exiting..."
+              exit 1
+            fi
+
+            echo "Pulling latest Docker images from ECR..."
+            sudo docker pull $ECR_REGISTRY/$ECR_FRONTEND:latest
+            sudo docker pull $ECR_REGISTRY/$ECR_BACKEND:latest
+
+            echo " Updating docker-compose.yml..."
+            sed -i "s|image: backend|image: $ECR_REGISTRY/$ECR_BACKEND:latest|" docker-compose.yml
+            sed -i "s|image: frontend|image: $ECR_REGISTRY/$ECR_FRONTEND:latest|" docker-compose.yml
+
+            echo " Running Docker Compose..."
+            sudo docker-compose down  
+            sudo docker-compose up -d  
+          EOF
+      
+      - name: Run Smoke Test on EC2
+        run: |
+          chmod 400 ~/.ssh/bookshop-key.pem
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
+            
+            sleep 10
+
+            echo "🔍 Checking if frontend is running..."
+            curl -Isf http://localhost:3000 || (echo "❌ frontend not responding!" && exit 1)
+            
+            # echo "🔍 Checking if backend is running..."
+            curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
+            echo "✅ Smoke Test Passed!"
+          EOF
+      
+      - name: Delete Images in ECR if Test Fails
+        run: |
+          echo "Smoke test failed. Cleaning up Docker images in ECR..."
+          
+          PRE_FRONTEND_IMAGE_TAG=$(aws ecr list-images --repository-name book-app/frontend \
+            --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
+          PRE_BACKEND_IMAGE_TAG=$(aws ecr list-images --repository-name book-app/backend \
+            --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
+          
+          aws ecr batch-delete-image --repository-name book-app/frontend --image-ids imageTag=${{ env.TIMESTAMP }}
+          aws ecr batch-delete-image --repository-name book-app/frontend --image-ids imageTag=${{ env.IMAGE_TAG }}
+          aws ecr batch-delete-image --repository-name book-app/backend --image-ids imageTag=${{ env.TIMESTAMP }}
+          aws ecr batch-delete-image --repository-name book-app/backend --image-ids imageTag=${{ env.IMAGE_TAG }}
+
+          if [ -z "$PRE_FRONTEND_IMAGE_TAG" ]; then
+            echo "❌ No previous images found. Cannot restore 'latest'."
+            exit 1
+          fi
+          
+          if [ -z "$PRE_BACKEND_IMAGE_TAG" ]; then
+            echo "❌ No previous images found. Cannot restore 'latest'."
+            exit 1
+          fi
+
+          echo "🔄 Previous valid frontend image found: $PRE_FRONTEND_IMAGE_TAG"
+          echo "🔄 Previous valid backend image found: $PRE_BACKEND_IMAGE_TAG"
+          
+          # Save the image manifest to a file for security
+          FRONTEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/frontend --image-ids imageTag="$PRE_FRONTEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
+          BACKEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/backend --image-ids imageTag="$PRE_BACKEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
+
+          # Retag
+          aws ecr put-image --repository-name book-app/frontend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$FRONTEND_MANIFEST"
+          aws ecr put-image --repository-name book-app/backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$BACKEND_MANIFEST"
+       
+
 
       # - name: Deploy to QA EC2
       #   if: success()
