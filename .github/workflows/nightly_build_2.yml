@@ -225,20 +225,26 @@ jobs:
  
           EOF
           
-      - name: Run Smoke Test on EC2
-        run: |
-          chmod 400 ~/.ssh/bookshop-key.pem
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
+      # - name: Run Smoke Test on EC2
+      #   run: |
+      #     chmod 400 ~/.ssh/bookshop-key.pem
+      #     ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
             
-            sleep 10
+      #       sleep 10
 
-            echo "🔍 Checking if frontend is running..."
-            curl -Isf http://localhost:3000 || (echo "❌ frontend not responding!" && exit 1)
+      #       echo "🔍 Checking if frontend is running..."
+      #       curl -Isf http://localhost:3000 || (echo "❌ frontend not responding!" && exit 1)
             
-            # echo "🔍 Checking if backend is running..."
-            curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
-            echo "✅ Smoke Test Passed!"
-          EOF
+      #       # echo "🔍 Checking if backend is running..."
+      #       curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
+      #       echo "✅ Smoke Test Passed!"
+      #     EOF
+
+      - name: Run Smoke Test (Failing) to Test
+        run: |
+          echo "🚨 Running a failing Smoke Test..."
+          exit 1  
+
        
       # - name: Delete Images if Test Fails
       #   if: failure()
