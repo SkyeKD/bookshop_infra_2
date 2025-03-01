@@ -233,22 +233,18 @@ jobs:
 
             cd app || exit 1 
 
-            if [ ! -f docker-compose.yml ]; then
-              echo "❌ docker-compose.yml not found! Exiting..."
-              exit 1
-            fi
 
-            echo "Pulling latest Docker images from ECR..."
-            sudo docker pull $ECR_REGISTRY/$ECR_FRONTEND:latest
-            sudo docker pull $ECR_REGISTRY/$ECR_BACKEND:latest
-
-            echo "Updating docker-compose.yml..."
-            sed -i "s|image: backend|image: $ECR_REGISTRY/$ECR_BACKEND:latest|" docker-compose.yml
-            sed -i "s|image: frontend|image: $ECR_REGISTRY/$ECR_FRONTEND:latest|" docker-compose.yml
+            echo "Updating docker-compose-test.yml..."
+            export ECR_BACKEND_IMAGE="$ECR_REGISTRY/$ECR_BACKEND:latest"
+            export ECR_FRONTEND_IMAGE="$ECR_REGISTRY/$ECR_FRONTEND:latest"
+          
+            envsubst < docker-compose-test.yml > docker-compose-test.yml.tmp && mv docker-compose-test.yml.tmp docker-compose-test.yml
+            cat docker-compose-test.yml  
 
             echo "Running Docker Compose..."
-            sudo docker-compose down  
-            sudo docker-compose up -d  
+            sudo docker-compose -f docker-compose-test.yml down 
+            sudo docker-compose -f docker-compose-test.yml up -d 
+ 
           EOF
           
       - name: Run Smoke Test on EC2
