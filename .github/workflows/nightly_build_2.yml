@@ -325,13 +325,20 @@ jobs:
       #     aws ecr put-image --repository-name book-app/backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$BACKEND_MANIFEST"
           
 
-      # - name: Terminate EC2 Instance
-      #   if: always()
-      #   run: |
-      #     INSTANCE_ID=$(cat ec2-instance-id.env)
-      #     if [ -z "$INSTANCE_ID" ]; then
-      #       echo "❌ No EC2 Instance ID found, skipping termination."
-      #     else
-      #       aws ec2 terminate-instances --instance-ids $INSTANCE_ID
-      #       echo "✅ EC2 Instance $INSTANCE_ID Terminated!"
-      #     fi
+      - name: Terminate EC2 Instance
+        if: always()
+        run: |
+          if [ -f ec2-instance-id.env ]; then
+            INSTANCE_ID=$(cat ec2-instance-id.env)
+            if [ -n "$INSTANCE_ID" ]; then
+              echo "Terminating EC2 Instance: $INSTANCE_ID"
+              aws ec2 terminate-instances --instance-ids "$INSTANCE_ID"
+              echo "✅ EC2 Instance $INSTANCE_ID Terminated!"
+            else
+              echo "❌ ERROR: INSTANCE_ID is empty! Skipping termination."
+              exit 1
+            fi
+          else
+            echo "❌ No EC2 Instance ID file found, skipping termination!"
+            exit 1
+          fi
