@@ -206,6 +206,13 @@ jobs:
             
             echo "AWS CLI Version:"
             aws --version || echo "❌ AWS CLI installation failed!"
+            
+            echo "🔑 Configuring AWS Credentials..."
+            export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+            export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            export AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
+            export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+
 
             echo "Logging in to AWS ECR..."
             aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
@@ -251,42 +258,21 @@ jobs:
             curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
             echo "✅ Smoke Test Passed!"
           EOF
-      
-      - name: Delete Images in ECR if Test Fails
-        run: |
-          echo "Smoke test failed. Cleaning up Docker images in ECR..."
-          
-          PRE_FRONTEND_IMAGE_TAG=$(aws ecr list-images --repository-name book-app/frontend \
-            --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
-          PRE_BACKEND_IMAGE_TAG=$(aws ecr list-images --repository-name book-app/backend \
-            --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
-          
-          aws ecr batch-delete-image --repository-name book-app/frontend --image-ids imageTag=${{ env.TIMESTAMP }}
-          aws ecr batch-delete-image --repository-name book-app/frontend --image-ids imageTag=${{ env.IMAGE_TAG }}
-          aws ecr batch-delete-image --repository-name book-app/backend --image-ids imageTag=${{ env.TIMESTAMP }}
-          aws ecr batch-delete-image --repository-name book-app/backend --image-ids imageTag=${{ env.IMAGE_TAG }}
-
-          if [ -z "$PRE_FRONTEND_IMAGE_TAG" ]; then
-            echo "❌ No previous images found. Cannot restore 'latest'."
-            exit 1
-          fi
-          
-          if [ -z "$PRE_BACKEND_IMAGE_TAG" ]; then
-            echo "❌ No previous images found. Cannot restore 'latest'."
-            exit 1
-          fi
-
-          echo "🔄 Previous valid frontend image found: $PRE_FRONTEND_IMAGE_TAG"
-          echo "🔄 Previous valid backend image found: $PRE_BACKEND_IMAGE_TAG"
-          
-          # Save the image manifest to a file for security
-          FRONTEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/frontend --image-ids imageTag="$PRE_FRONTEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
-          BACKEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/backend --image-ids imageTag="$PRE_BACKEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
-
-          # Retag
-          aws ecr put-image --repository-name book-app/frontend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$FRONTEND_MANIFEST"
-          aws ecr put-image --repository-name book-app/backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$BACKEND_MANIFEST"
        
+      - name: Delete Images if Test Fails
+        if: failure()
+        run: |
+          echo "❌ Smoke Test Failed! Removing ECR images..."
+          BACKEND_TAGS=$(aws ecr list-images --repository-name bookshop-backend --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r)
+          FRONTEND_TAGS=$(aws ecr list-images --repository-name bookshop-frontend --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r)
+
+          LATEST_BACKEND_TAG=$(echo "$BACKEND_TAGS" | head -n 1)
+          LATEST_FRONTEND_TAG=$(echo "$FRONTEND_TAGS" | head -n 1)
+
+          [ -n "$LATEST_BACKEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=$LATEST_BACKEND_TAG || true
+          [ -n "$LATEST_FRONTEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=$LATEST_FRONTEND_TAG || true
+
+          echo "✅ Cleanup completed."
 
 
       # - name: Deploy to QA EC2
