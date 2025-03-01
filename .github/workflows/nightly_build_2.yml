@@ -65,21 +65,28 @@ jobs:
           FRONTEND_IMAGE_ID=$(docker images --filter=reference="frontend" --format "{{.ID}}")
           BACKEND_IMAGE_ID=$(docker images --filter=reference="backend" --format "{{.ID}}")
 
-          echo "Found Docker Image ID (frontend): $FRONTEND_IMAGE_ID"
-          echo "Found Docker Image ID (backend): $BACKEND_IMAGE_ID"
-
-          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
+          echo "frontend Docker Image ID : $FRONTEND_IMAGE_ID"
+          echo "backend Docker Image ID : $BACKEND_IMAGE_ID"
+          
+          echo "🔓 Logging in to AWS ECR..."
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY || {
+            echo "❌ AWS ECR login failed!"
+            exit 1
+          }
 
           TIMESTAMP=$(date "+%Y%m%d.%H%M%S")
           echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
 
-          docker tag $FRONTEND_IMAGE_ID ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_FRONTEND }}:$TIMESTAMP
-          docker tag $FRONTEND_IMAGE_ID ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_FRONTEND }}:$IMAGE_TAG
-          docker push --all-tags ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_FRONTEND }}
+          FRONTEND_REPO="$ECR_REGISTRY/${{ env.ECR_REPOSITORY_FRONTEND }}"
+          BACKEND_REPO="$ECR_REGISTRY/${{ env.ECR_REPOSITORY_BACKEND }}"
 
-          docker tag $BACKEND_IMAGE_ID ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_BACKEND }}:$TIMESTAMP
-          docker tag $BACKEND_IMAGE_ID ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_BACKEND }}:$IMAGE_TAG
-          docker push --all-tags ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_BACKEND }}
+          docker tag $FRONTEND_IMAGE_ID $FRONTEND_REPO:$TIMESTAMP
+          docker tag $FRONTEND_IMAGE_ID $FRONTEND_REPO:$IMAGE_TAG
+          docker push --all-tags $FRONTEND_REPO
+
+          docker tag $BACKEND_IMAGE_ID $BACKEND_REPO:$TIMESTAMP
+          docker tag $BACKEND_IMAGE_ID $BACKEND_REPO:$IMAGE_TAG
+          docker push --all-tags $BACKEND_REPO
 
       
       - name: Setup SSH Key
