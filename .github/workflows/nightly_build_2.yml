@@ -1,0 +1,230 @@
+name: Nightly Deployment Workflow
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  nightly-deployment:
+    runs-on: ubuntu-latest
+
+    env:
+      AWS_REGION: us-west-2
+      IMAGE_TAG: latest
+      ECR_REPOSITORY_FRONTEND: bookshop-frontend
+      ECR_REPOSITORY_BACKEND: bookshop-backend
+      SOURCE_REPO: https://github.com/SkyeKD/bookshop_2.git  
+
+    steps:
+      - name: Checkout Infra Repo
+        uses: actions/checkout@v4
+      
+      - name: Checkout Source Repo
+        uses: actions/checkout@v4
+        with:
+          repository: "SkyeKD/bookshop_2"  
+
+      - name: Build and Start Containers Using Docker Compose
+        run: |
+          docker compose up -d
+          sleep 20
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # - name: Checkout Source Repo
+      #   uses: actions/checkout@v4
+      #   with:
+      #     repository: "SkyeKD/bookshop_2"
+      #     path: "app"  # Directory where the repo will be cloned
+
+      # - name: Build and Start Containers Using Docker Compose
+      #   run: |
+      #     cd app
+      #     docker compose up -d
+      #     sleep 20
+
+
+      - name: Push image to ECR
+        run: |
+          FRONTEND_IMAGE_ID=$(docker images --filter=reference="frontend" --format "{{.ID}}")
+          BACKEND_IMAGE_ID=$(docker images --filter=reference="backend" --format "{{.ID}}")
+
+          echo "Found Docker Image ID (frontend): $FRONTEND_IMAGE_ID"
+          echo "Found Docker Image ID (backend): $BACKEND_IMAGE_ID"
+
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
+
+          TIMESTAMP=$(date "+%Y%m%d.%H%M%S")
+          echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+
+          docker tag $FRONTEND_IMAGE_ID ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_FRONTEND }}:$TIMESTAMP
+          docker tag $FRONTEND_IMAGE_ID ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_FRONTEND }}:$IMAGE_TAG
+          docker push --all-tags ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_FRONTEND }}
+
+          docker tag $BACKEND_IMAGE_ID ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_BACKEND }}:$TIMESTAMP
+          docker tag $BACKEND_IMAGE_ID ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_BACKEND }}:$IMAGE_TAG
+          docker push --all-tags ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_BACKEND }}
+
+      # - name: Launch Temporary EC2 for Smoke Test
+      #   id: launch_ec2
+      #   run: |
+      #     INSTANCE_ID=$(aws ec2 run-instances \
+      #       --image-id ami-053a45fff0a704a47 \
+      #       --count 1 \
+      #       --instance-type t2.micro \
+      #       --key-name ec2TestInstanceKey \
+      #       --security-group-ids sg-06ed8968a7a3ec08f \
+      #       --subnet-id subnet-058dd85267834457a \
+      #       --query 'Instances[0].InstanceId' \
+      #       --output text)
+      #     echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+      #     aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+      #     sleep 10
+      
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          printf "%s" "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/bookshop-key.pem
+          chmod 400 ~/.ssh/bookshop-key.pem
+
+      - name: Deploy EC2 Instance
+        run: |
+          set -e
+          chmod +x scripts/deploy-ec2.sh
+          ./scripts/deploy-ec2.sh
+          sleep 10
+
+      - name: Get EC2 Public IP
+        run: |
+          if [ -f ec2_ip.txt ]; then
+            echo "EC2_PUBLIC_IP=$(cat ec2_ip.txt)" >> $GITHUB_ENV
+          else
+            echo "❌ Error: No EC2 IP found!"
+            exit 1
+          fi
+
+            - name: Debug EC2 Public IP
+        run: cat ec2_ip.txt || echo "No EC2 IP found!"
+        
+      - name: Test SSH Connection
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} "echo 'SSH Connection Successful'"
+ 
+      - name: Wait for EC2 to be ready
+
+        run: |
+          if [ -z "${{ env.EC2_PUBLIC_IP }}" ]; then
+            echo "❌ EC2_PUBLIC_IP is empty. Cannot proceed."
+            exit 1
+          fi
+          
+          echo "Waiting for EC2 SSH access..."
+          chmod 400 ~/.ssh/bookshop-key.pem
+          until ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} "echo 'EC2 is ready'"
+          do
+            sleep 10
+          done
+
+
+      # - name: Pull Images on Temporary EC2 and Run Smoke Tests
+      #   run: |
+      #     PUBLIC_DNS=$(aws ec2 describe-instances --instance-ids ${{ env.INSTANCE_ID }} \
+      #       --query 'Reservations[0].Instances[0].PublicDnsName' \
+      #       --output text)
+      #     echo "PUBLIC_DNS=$PUBLIC_DNS" >> $GITHUB_ENV
+      #     scp -i ec2-key.pem -o StrictHostKeyChecking=no app/docker-compose-test.yml ec2-user@$PUBLIC_DNS:~/
+      #     ssh -i ec2-key.pem -o StrictHostKeyChecking=no ec2-user@$PUBLIC_DNS << EOF
+      #       sudo yum install -y docker
+      #       sudo service docker start
+      #       sudo chkconfig docker on
+      #       sudo usermod -aG docker ec2-user
+      #       sudo curl -L https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/bin/docker-compose
+      #       sudo chmod +x /usr/local/bin/docker-compose
+      #       newgrp docker
+      #       docker --version
+      #       docker-compose version
+
+      #       export AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}
+      #       export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+      #       export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #       export AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
+      #       export AWS_REGION=${{ env.AWS_REGION }}
+
+      #       aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.\$AWS_REGION.amazonaws.com
+      #       docker-compose -f docker-compose-test.yml up -d
+      #       sleep 10
+
+      #       curl -o /dev/null -s -w "%{http_code}\n" http://localhost:5173/ | grep -q 200 || exit 1
+      #     EOF
+
+      # - name: Deploy to QA EC2
+      #   if: success()
+      #   run: |
+      #     echo "Smoke test succeeded. Deploying latest images to QA..."
+      #     ssh -i ec2-key.pem -o StrictHostKeyChecking=no ec2-user@${{ secrets.QA_EC2_PUBLIC_DNS }} << EOF
+      #       export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+      #       export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #       export AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
+      #       export AWS_REGION=${{ env.AWS_REGION }}
+
+      #       export DB_HOST="${{ secrets.RDS_ENDPOINT }}"
+      #       export DB_USER="${{ secrets.RDS_USERNAME }}"
+      #       export DB_PASSWORD="${{ secrets.RDS_PASSWORD }}"
+      #       export DB_NAME="${{ secrets.RDS_DBNAME }}"
+
+      #       aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.\$AWS_REGION.amazonaws.com
+      #       docker-compose -f docker-compose-qa.yml pull
+      #       docker-compose down
+      #       docker-compose -f docker-compose-qa.yml up -d
+      #       docker image prune -f
+      #     EOF
+      # - name: Delete Images in ECR if Test Fails
+      #   if: failure()
+      #   run: |
+      #     echo "Smoke test failed. Cleaning up Docker images in ECR..."
+          
+      #     PRE_FRONTEND_IMAGE_TAG=$(aws ecr list-images --repository-name book-app/frontend \
+      #       --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
+      #     PRE_BACKEND_IMAGE_TAG=$(aws ecr list-images --repository-name book-app/backend \
+      #       --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
+          
+      #     aws ecr batch-delete-image --repository-name book-app/frontend --image-ids imageTag=${{ env.TIMESTAMP }}
+      #     aws ecr batch-delete-image --repository-name book-app/frontend --image-ids imageTag=${{ env.IMAGE_TAG }}
+      #     aws ecr batch-delete-image --repository-name book-app/backend --image-ids imageTag=${{ env.TIMESTAMP }}
+      #     aws ecr batch-delete-image --repository-name book-app/backend --image-ids imageTag=${{ env.IMAGE_TAG }}
+
+      #     if [ -z "$PRE_FRONTEND_IMAGE_TAG" ]; then
+      #       echo "❌ No previous images found. Cannot restore 'latest'."
+      #       exit 1
+      #     fi
+          
+      #     if [ -z "$PRE_BACKEND_IMAGE_TAG" ]; then
+      #       echo "❌ No previous images found. Cannot restore 'latest'."
+      #       exit 1
+      #     fi
+
+      #     echo "🔄 Previous valid frontend image found: $PRE_FRONTEND_IMAGE_TAG"
+      #     echo "🔄 Previous valid backend image found: $PRE_BACKEND_IMAGE_TAG"
+          
+      #     # Save the image manifest to a file for security
+      #     FRONTEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/frontend --image-ids imageTag="$PRE_FRONTEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
+      #     BACKEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/backend --image-ids imageTag="$PRE_BACKEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
+
+      #     # Retag
+      #     aws ecr put-image --repository-name book-app/frontend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$FRONTEND_MANIFEST"
+      #     aws ecr put-image --repository-name book-app/backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$BACKEND_MANIFEST"
+          
+
+      # - name: Terminate Temporary EC2 Instance
+      #   run: |
+      #     aws ec2 terminate-instances --instance-ids ${{ env.INSTANCE_ID }}
