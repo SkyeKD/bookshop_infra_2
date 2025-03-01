@@ -75,8 +75,8 @@ jobs:
 
       - name: Push image to ECR
         run: |
-          FRONTEND_IMAGE_ID=$(docker images --filter=reference="app-frontend" --format "{{.ID}}")
-          BACKEND_IMAGE_ID=$(docker images --filter=reference="app-backend" --format "{{.ID}}")
+          FRONTEND_IMAGE_ID=$(docker images --filter=reference="frontend" --format "{{.ID}}")
+          BACKEND_IMAGE_ID=$(docker images --filter=reference="backend" --format "{{.ID}}")
 
           echo "Found Docker Image ID (frontend): $FRONTEND_IMAGE_ID"
           echo "Found Docker Image ID (backend): $BACKEND_IMAGE_ID"
