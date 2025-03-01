@@ -81,21 +81,6 @@ jobs:
           docker tag $BACKEND_IMAGE_ID ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_BACKEND }}:$IMAGE_TAG
           docker push --all-tags ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com/${{ env.ECR_REPOSITORY_BACKEND }}
 
-      # - name: Launch Temporary EC2 for Smoke Test
-      #   id: launch_ec2
-      #   run: |
-      #     INSTANCE_ID=$(aws ec2 run-instances \
-      #       --image-id ami-053a45fff0a704a47 \
-      #       --count 1 \
-      #       --instance-type t2.micro \
-      #       --key-name ec2TestInstanceKey \
-      #       --security-group-ids sg-06ed8968a7a3ec08f \
-      #       --subnet-id subnet-058dd85267834457a \
-      #       --query 'Instances[0].InstanceId' \
-      #       --output text)
-      #     echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
-      #     aws ec2 wait instance-running --instance-ids $INSTANCE_ID
-      #     sleep 10
       
       - name: Setup SSH Key
         run: |
@@ -127,7 +112,6 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} "echo 'SSH Connection Successful'"
  
       - name: Wait for EC2 to be ready
-
         run: |
           if [ -z "${{ env.EC2_PUBLIC_IP }}" ]; then
             echo "❌ EC2_PUBLIC_IP is empty. Cannot proceed."
@@ -227,7 +211,6 @@ jobs:
             export ECR_FRONTEND_IMAGE="$ECR_REGISTRY/$ECR_FRONTEND:latest"
           
             envsubst < docker-compose-test.yml > docker-compose-test.yml.tmp && mv docker-compose-test.yml.tmp docker-compose-test.yml
-            cat docker-compose-test.yml  
 
             echo "Running Docker Compose..."
             sudo docker-compose -f docker-compose-test.yml down 
