@@ -156,7 +156,7 @@ jobs:
             echo "🚀 Setup Complete!"
       
 
-      - name: Pull ECR Image & Deploy Using Docker Compose
+      - name: Pull ECR Image & Deploy Test Using Docker Compose
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << EOF
             set -e
@@ -240,20 +240,20 @@ jobs:
             echo "✅ Smoke Test Passed!"
           EOF
        
-      - name: Delete Images if Test Fails
-        if: failure()
-        run: |
-          echo "❌ Smoke Test Failed! Removing ECR images..."
-          BACKEND_TAGS=$(aws ecr list-images --repository-name bookshop-backend --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r)
-          FRONTEND_TAGS=$(aws ecr list-images --repository-name bookshop-frontend --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r)
+      # - name: Delete Images if Test Fails
+      #   if: failure()
+      #   run: |
+      #     echo "❌ Smoke Test Failed! Removing ECR images..."
+      #     BACKEND_TAGS=$(aws ecr list-images --repository-name bookshop-backend --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r)
+      #     FRONTEND_TAGS=$(aws ecr list-images --repository-name bookshop-frontend --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r)
 
-          LATEST_BACKEND_TAG=$(echo "$BACKEND_TAGS" | head -n 1)
-          LATEST_FRONTEND_TAG=$(echo "$FRONTEND_TAGS" | head -n 1)
+      #     LATEST_BACKEND_TAG=$(echo "$BACKEND_TAGS" | head -n 1)
+      #     LATEST_FRONTEND_TAG=$(echo "$FRONTEND_TAGS" | head -n 1)
 
-          [ -n "$LATEST_BACKEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=$LATEST_BACKEND_TAG || true
-          [ -n "$LATEST_FRONTEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=$LATEST_FRONTEND_TAG || true
+      #     [ -n "$LATEST_BACKEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=$LATEST_BACKEND_TAG || true
+      #     [ -n "$LATEST_FRONTEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=$LATEST_FRONTEND_TAG || true
 
-          echo "✅ Cleanup completed."
+      #     echo "✅ Cleanup completed."
 
 
       # - name: Deploy to QA EC2
@@ -278,42 +278,62 @@ jobs:
       #       docker image prune -f
       #     EOF
 
-      # - name: Delete Images in ECR if Test Fails
-      #   if: failure()
-      #   run: |
-      #     echo "Smoke test failed. Cleaning up Docker images in ECR..."
-          
-      #     PRE_FRONTEND_IMAGE_TAG=$(aws ecr list-images --repository-name book-app/frontend \
-      #       --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
-      #     PRE_BACKEND_IMAGE_TAG=$(aws ecr list-images --repository-name book-app/backend \
-      #       --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
-          
-      #     aws ecr batch-delete-image --repository-name book-app/frontend --image-ids imageTag=${{ env.TIMESTAMP }}
-      #     aws ecr batch-delete-image --repository-name book-app/frontend --image-ids imageTag=${{ env.IMAGE_TAG }}
-      #     aws ecr batch-delete-image --repository-name book-app/backend --image-ids imageTag=${{ env.TIMESTAMP }}
-      #     aws ecr batch-delete-image --repository-name book-app/backend --image-ids imageTag=${{ env.IMAGE_TAG }}
+      - name: Delete Images in ECR if Test Fails
+        if: failure()
+        run: |
+          echo "❌ Smoke Test Failed! Removing ECR images..."
 
-      #     if [ -z "$PRE_FRONTEND_IMAGE_TAG" ]; then
-      #       echo "❌ No previous images found. Cannot restore 'latest'."
-      #       exit 1
-      #     fi
+          LATEST_FRONTEND_TAG=$(aws ecr list-images --repository-name bookshop-frontend \
+            --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r | head -n 1)
+          LATEST_BACKEND_TAG=$(aws ecr list-images --repository-name bookshop-backend \
+            --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r | head -n 1)
+  
+          PRE_FRONTEND_IMAGE_TAG=$(aws ecr list-images --repository-name bookshop-frontend  \
+            --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
+          PRE_BACKEND_IMAGE_TAG=$(aws ecr list-images --repository-name bookshop-backend \
+            --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
           
-      #     if [ -z "$PRE_BACKEND_IMAGE_TAG" ]; then
-      #       echo "❌ No previous images found. Cannot restore 'latest'."
-      #       exit 1
-      #     fi
+          [ -n "$LATEST_FRONTEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=$LATEST_FRONTEND_TAG || true
+          aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=${{ env.IMAGE_TAG }}
+          [ -n "$LATEST_BACKEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=$LATEST_BACKEND_TAG || true
+          aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=${{ env.IMAGE_TAG }}
+ 
+          if [ -n "$PRE_FRONTEND_IMAGE_TAG" ]; then
+            echo "🔄 Tagging frontend image $PRE_FRONTEND_IMAGE_TAG as latest..."
+            
+            aws ecr batch-get-image --repository-name bookshop-frontend --image-ids imageTag=$PRE_FRONTEND_IMAGE_TAG \
+              --query 'images[0].imageManifest' --output text > image_manifest.json
 
-      #     echo "🔄 Previous valid frontend image found: $PRE_FRONTEND_IMAGE_TAG"
-      #     echo "🔄 Previous valid backend image found: $PRE_BACKEND_IMAGE_TAG"
-          
-      #     # Save the image manifest to a file for security
-      #     FRONTEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/frontend --image-ids imageTag="$PRE_FRONTEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
-      #     BACKEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/backend --image-ids imageTag="$PRE_BACKEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
+            if [ -s image_manifest.json ]; then
+              aws ecr put-image --repository-name bookshop-frontend --image-tag ${{ env.IMAGE_TAG }} --image-manifest file://image_manifest.json
+              echo "✅ Successfully tagged frontend $PRE_FRONTEND_IMAGE_TAG as latest."
+            else
+              echo "❌ Failed to retrieve image manifest for frontend."
+            fi
 
-      #     # Retag
-      #     aws ecr put-image --repository-name book-app/frontend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$FRONTEND_MANIFEST"
-      #     aws ecr put-image --repository-name book-app/backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$BACKEND_MANIFEST"
-          
+            rm -f image_manifest.json
+          else
+            echo "❌ No previous frontend image found. Skipping."
+          fi
+
+          if [ -n "$PRE_BACKEND_IMAGE_TAG" ]; then
+            echo "🔄 Tagging backend image $PRE_BACKEND_IMAGE_TAG as latest..."
+
+            aws ecr batch-get-image --repository-name bookshop-backend --image-ids imageTag=$PRE_BACKEND_IMAGE_TAG \
+              --query 'images[0].imageManifest' --output text > image_manifest.json
+
+            if [ -s image_manifest.json ]; then
+              aws ecr put-image --repository-name bookshop-backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest file://image_manifest.json
+              echo "✅ Successfully tagged backend $PRE_BACKEND_IMAGE_TAG as latest."
+            else
+              echo "❌ Failed to retrieve image manifest for backend."
+            fi
+
+            rm -f image_manifest.json
+          else
+            echo "❌ No previous backend image found. Skipping."
+          fi
+ 
 
       - name: Terminate EC2 Instance
         if: always()
