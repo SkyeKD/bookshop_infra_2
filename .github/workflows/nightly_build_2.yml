@@ -18,6 +18,12 @@ jobs:
       ECR_REPOSITORY_FRONTEND: bookshop-frontend
       ECR_REPOSITORY_BACKEND: bookshop-backend
       SOURCE_REPO: https://github.com/SkyeKD/bookshop_2.git  
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      ECR_BACKEND: "bookshop-backend"
+      ECR_FRONTEND: "bookshop-frontend"
+      ECR_REGISTRY: "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com"
 
     steps:
    
@@ -170,18 +176,14 @@ jobs:
 
             echo "🚀 Setup Complete!"
       
+
       - name: Pull ECR Image & Deploy Using Docker Compose
         run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << EOF
             set -e
-            AWS_ACCOUNT_ID="${{ secrets.AWS_ACCOUNT_ID }}"
-            AWS_REGION="${{ env.AWS_REGION }}"
-            ECR_FRONTEND="${{ env.ECR_REPOSITORY_FRONTEND }}"
-            ECR_BACKEND="${{ env.ECR_REPOSITORY_BACKEND }}"
-            ECR_REGISTRY="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
             echo "Logging in to AWS ECR..."
-            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.$AWS_REGION.amazonaws.com
+            aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
 
             echo "Cloning Source Code Repo..."
             if [ ! -d "app" ]; then
@@ -201,15 +203,15 @@ jobs:
             sudo docker pull $ECR_REGISTRY/$ECR_FRONTEND:latest
             sudo docker pull $ECR_REGISTRY/$ECR_BACKEND:latest
 
-            echo " Updating docker-compose.yml..."
+            echo "Updating docker-compose.yml..."
             sed -i "s|image: backend|image: $ECR_REGISTRY/$ECR_BACKEND:latest|" docker-compose.yml
             sed -i "s|image: frontend|image: $ECR_REGISTRY/$ECR_FRONTEND:latest|" docker-compose.yml
 
-            echo " Running Docker Compose..."
+            echo "Running Docker Compose..."
             sudo docker-compose down  
             sudo docker-compose up -d  
           EOF
-      
+          
       - name: Run Smoke Test on EC2
         run: |
           chmod 400 ~/.ssh/bookshop-key.pem
