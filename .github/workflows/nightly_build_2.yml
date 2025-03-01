@@ -299,6 +299,14 @@ jobs:
           PRE_BACKEND_IMAGE_TAG=$(aws ecr list-images --repository-name bookshop-backend \
             --query 'imageIds[?imageTag!=`latest`].[imageTag]' --output text | sort -r | sed -n '2p')
           
+          echo "🔍 Debugging ECR Cleanup..."
+          echo "📌 Latest frontend tag: $LATEST_FRONTEND_TAG"
+          echo "📌 Latest backend tag: $LATEST_BACKEND_TAG"
+          echo "📌 Current TIMESTAMP: $TIMESTAMP"
+          echo "📌 Previous frontend tag (should become latest): $PRE_FRONTEND_IMAGE_TAG"
+          echo "📌 Previous backend tag (should become latest): $PRE_BACKEND_IMAGE_TAG"
+
+
           [ -n "$LATEST_FRONTEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=$LATEST_FRONTEND_TAG || true
           aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=${{ env.IMAGE_TAG }}
           [ -n "$LATEST_BACKEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=$LATEST_BACKEND_TAG || true
