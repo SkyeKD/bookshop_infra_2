@@ -30,7 +30,7 @@ jobs:
       - name: Checkout Infra Repo
         uses: actions/checkout@v4
         with:
-          path: infra  # 把 infra repo 拉取到 infra 目录
+          path: infra  
 
       - name: Checkout Source Repo
         uses: actions/checkout@v4
@@ -58,18 +58,6 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
-
-      # - name: Checkout Source Repo
-      #   uses: actions/checkout@v4
-      #   with:
-      #     repository: "SkyeKD/bookshop_2"
-      #     path: "app"  # Directory where the repo will be cloned
-
-      # - name: Build and Start Containers Using Docker Compose
-      #   run: |
-      #     cd app
-      #     docker compose up -d
-      #     sleep 20
 
 
       - name: Push image to ECR
@@ -299,6 +287,7 @@ jobs:
       #       docker-compose -f docker-compose-qa.yml up -d
       #       docker image prune -f
       #     EOF
+
       # - name: Delete Images in ECR if Test Fails
       #   if: failure()
       #   run: |
@@ -336,6 +325,13 @@ jobs:
       #     aws ecr put-image --repository-name book-app/backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$BACKEND_MANIFEST"
           
 
-      # - name: Terminate Temporary EC2 Instance
+      # - name: Terminate EC2 Instance
+      #   if: always()
       #   run: |
-      #     aws ec2 terminate-instances --instance-ids ${{ env.INSTANCE_ID }}
+      #     INSTANCE_ID=$(cat ec2-instance-id.env)
+      #     if [ -z "$INSTANCE_ID" ]; then
+      #       echo "❌ No EC2 Instance ID found, skipping termination."
+      #     else
+      #       aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+      #       echo "✅ EC2 Instance $INSTANCE_ID Terminated!"
+      #     fi
