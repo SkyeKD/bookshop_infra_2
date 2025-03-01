@@ -181,6 +181,17 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << EOF
             set -e
+            
+            echo "🔍 Checking AWS CLI installation..."
+            if ! command -v aws &> /dev/null; then
+              echo "🚀 Installing AWS CLI..."
+              sudo apt update -y
+              sudo apt install -y awscli
+            else
+              echo "✅ AWS CLI already installed."
+            fi
+            echo "AWS CLI Version:"
+            aws --version || echo "❌ AWS CLI installation failed!"
 
             echo "Logging in to AWS ECR..."
             aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY
