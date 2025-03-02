@@ -225,41 +225,20 @@ jobs:
  
           EOF
           
-      # - name: Run Smoke Test on EC2
-      #   run: |
-      #     chmod 400 ~/.ssh/bookshop-key.pem
-      #     ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
-            
-      #       sleep 10
-
-      #       echo "🔍 Checking if frontend is running..."
-      #       curl -Isf http://localhost:3000 || (echo "❌ frontend not responding!" && exit 1)
-            
-      #       # echo "🔍 Checking if backend is running..."
-      #       curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
-      #       echo "✅ Smoke Test Passed!"
-      #     EOF
-
-      - name: Run Smoke Test (Failing) to Test
+      - name: Run Smoke Test on EC2
         run: |
-          echo "🚨 Running a failing Smoke Test..."
-          exit 1  
+          chmod 400 ~/.ssh/bookshop-key.pem
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
+            
+            sleep 10
 
-       
-      # - name: Delete Images if Test Fails
-      #   if: failure()
-      #   run: |
-      #     echo "❌ Smoke Test Failed! Removing ECR images..."
-      #     BACKEND_TAGS=$(aws ecr list-images --repository-name bookshop-backend --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r)
-      #     FRONTEND_TAGS=$(aws ecr list-images --repository-name bookshop-frontend --query 'imageIds[*].imageTag' --output text | grep -E '^[0-9]{8}\.[0-9]{6}$' | sort -r)
-
-      #     LATEST_BACKEND_TAG=$(echo "$BACKEND_TAGS" | head -n 1)
-      #     LATEST_FRONTEND_TAG=$(echo "$FRONTEND_TAGS" | head -n 1)
-
-      #     [ -n "$LATEST_BACKEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=$LATEST_BACKEND_TAG || true
-      #     [ -n "$LATEST_FRONTEND_TAG" ] && aws ecr batch-delete-image --repository-name bookshop-frontend --image-ids imageTag=$LATEST_FRONTEND_TAG || true
-
-      #     echo "✅ Cleanup completed."
+            echo "🔍 Checking if frontend is running..."
+            curl -Isf http://localhost:3000 || (echo "❌ frontend not responding!" && exit 1)
+            
+            # echo "🔍 Checking if backend is running..."
+            curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
+            echo "✅ Smoke Test Passed!"
+          EOF
 
 
       # - name: Deploy to QA EC2
