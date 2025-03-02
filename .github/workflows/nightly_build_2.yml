@@ -304,41 +304,48 @@ jobs:
           aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=${{ env.TIMESTAMP }}
           aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=${{ env.IMAGE_TAG }}
  
+
           if [ -n "$PRE_FRONTEND_IMAGE_TAG" ]; then
             echo "🔄 Tagging frontend image $PRE_FRONTEND_IMAGE_TAG as latest..."
             
-            aws ecr batch-get-image --repository-name bookshop-frontend --image-ids imageTag=$PRE_FRONTEND_IMAGE_TAG \
-              --query 'images[0].imageManifest' --output text > image_manifest_frontend.json
+            FRONTEND_MANIFEST=$(aws ecr batch-get-image --repository-name bookshop-frontend \
+              --image-ids imageTag="$PRE_FRONTEND_IMAGE_TAG" --query 'images[].imageManifest' --output json)
 
-            if [ -s image_manifest_frontend.json ]; then
-              aws ecr put-image --repository-name bookshop-frontend --image-tag ${{ env.IMAGE_TAG }} --image-manifest file://image_manifest_frontend.json
+            if [ -n "$FRONTEND_MANIFEST" ]; then
+              echo "$FRONTEND_MANIFEST" > frontend_manifest.json
+
+              aws ecr put-image --repository-name bookshop-frontend --image-tag latest --image-manifest file://frontend_manifest.json
               echo "✅ Successfully tagged frontend $PRE_FRONTEND_IMAGE_TAG as latest."
+
+              rm -f frontend_manifest.json
             else
               echo "❌ Failed to retrieve image manifest for frontend."
             fi
-
-            rm -f image_manifest_frontend.json
           else
             echo "❌ No previous frontend image found. Skipping."
           fi
+          
 
           if [ -n "$PRE_BACKEND_IMAGE_TAG" ]; then
             echo "🔄 Tagging backend image $PRE_BACKEND_IMAGE_TAG as latest..."
+            
+            BACKEND_MANIFEST=$(aws ecr batch-get-image --repository-name bookshop-backend \
+              --image-ids imageTag="$PRE_BACKEND_IMAGE_TAG" --query 'images[].imageManifest' --output json)
 
-            aws ecr batch-get-image --repository-name bookshop-backend --image-ids imageTag=$PRE_BACKEND_IMAGE_TAG \
-              --query 'images[0].imageManifest' --output text > image_manifest_backend.json
+            if [ -n "$BACKEND_MANIFEST" ]; then
+              echo "$BACKEND_MANIFEST" > backend_manifest.json
 
-            if [ -s image_manifest_backend.json ]; then
-              aws ecr put-image --repository-name bookshop-backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest file://image_manifest_backend.json
+              aws ecr put-image --repository-name bookshop-backend --image-tag latest --image-manifest file://backend_manifest.json
               echo "✅ Successfully tagged backend $PRE_BACKEND_IMAGE_TAG as latest."
+
+              rm -f backend_manifest.json
             else
               echo "❌ Failed to retrieve image manifest for backend."
             fi
-
-            rm -f image_manifest_backend.json
           else
             echo "❌ No previous backend image found. Skipping."
           fi
+
  
 
       - name: Terminate EC2 Instance
