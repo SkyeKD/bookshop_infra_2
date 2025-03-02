@@ -341,14 +341,15 @@ jobs:
               exit 1
             }
 
+
             echo "Cloning Source Code Repo..."
-            if [ ! -d "app" ]; then
-              git clone https://github.com/SkyeKD/bookshop_2.git app
-            else
-              cd app && git pull && cd ..
+            if [ -d "app" ]; then
+              echo "Removing existing app directory..."
+              rm -rf app 
             fi
 
-            cd app || exit 1 
+            git clone https://github.com/SkyeKD/bookshop_2.git app
+            cd app || exit 1
 
 
             echo "Updating docker-compose-qa.yml..."
