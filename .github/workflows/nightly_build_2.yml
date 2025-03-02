@@ -304,15 +304,6 @@ jobs:
           aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=${{ env.TIMESTAMP }}
           aws ecr batch-delete-image --repository-name bookshop-backend --image-ids imageTag=${{ env.IMAGE_TAG }}
  
-
-          FRONTEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/frontend --image-ids imageTag="$PRE_FRONTEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
-          BACKEND_MANIFEST=$(aws ecr batch-get-image --repository-name book-app/backend --image-ids imageTag="$PRE_BACKEND_IMAGE_TAG" --output text --query 'images[].imageManifest')
-
-          # Retag
-          aws ecr put-image --repository-name book-app/frontend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$FRONTEND_MANIFEST"
-          aws ecr put-image --repository-name book-app/backend --image-tag ${{ env.IMAGE_TAG }} --image-manifest "$BACKEND_MANIFEST"
-
-
           if [ -n "$PRE_FRONTEND_IMAGE_TAG" ]; then
             echo "🔄 Tagging frontend image $PRE_FRONTEND_IMAGE_TAG as latest..."
             
@@ -341,7 +332,7 @@ jobs:
             else
               echo "❌ Failed to retrieve image manifest for backend."
             fi
-            
+
           else
             echo "❌ No previous backend image found. Skipping."
           fi
