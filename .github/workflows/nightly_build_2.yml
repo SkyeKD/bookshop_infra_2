@@ -241,28 +241,6 @@ jobs:
           EOF
 
 
-      # - name: Deploy to QA EC2
-      #   if: success()
-      #   run: |
-      #     echo "Smoke test succeeded. Deploying latest images to QA..."
-      #     ssh -i ec2-key.pem -o StrictHostKeyChecking=no ec2-user@${{ secrets.QA_EC2_PUBLIC_DNS }} << EOF
-      #       export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
-      #       export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      #       export AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
-      #       export AWS_REGION=${{ env.AWS_REGION }}
-
-      #       export DB_HOST="${{ secrets.RDS_ENDPOINT }}"
-      #       export DB_USER="${{ secrets.RDS_USERNAME }}"
-      #       export DB_PASSWORD="${{ secrets.RDS_PASSWORD }}"
-      #       export DB_NAME="${{ secrets.RDS_DBNAME }}"
-
-      #       aws ecr get-login-password --region \$AWS_REGION | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.\$AWS_REGION.amazonaws.com
-      #       docker-compose -f docker-compose-qa.yml pull
-      #       docker-compose down
-      #       docker-compose -f docker-compose-qa.yml up -d
-      #       docker image prune -f
-      #     EOF
-
       - name: Delete Images in ECR if Test Fails
         if: failure()
         run: |
@@ -316,6 +294,59 @@ jobs:
             echo "❌ No previous backend image found. Skipping."
           fi
 
+      
+      - name: Deploy to QA EC2
+        if: success()
+        run: |
+          echo "Smoke test succeeded. Deploying latest images to QA..."
+          ssh -i book-key.pem -o StrictHostKeyChecking=no ubuntu@${{ secrets.QA_EC2_IP }} << EOF
+            set -e 
+            
+            export AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
+            export AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
+            export AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}
+            export AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }}
+            export ECR_REGISTRY=${{ env.ECR_REGISTRY }}
+          
+            export ECR_BACKEND_IMAGE="$ECR_REGISTRY/bookshop-backend:latest"
+            export ECR_FRONTEND_IMAGE="$ECR_REGISTRY/bookshop-frontend:latest"
+          
+            export DB_HOST="${{ secrets.RDS_ENDPOINT }}"
+            export DB_USER="${{ secrets.RDS_USERNAME }}"
+            export DB_PASSWORD="${{ secrets.RDS_PASSWORD }}"
+            export DB_NAME="${{ secrets.RDS_DBNAME }}"
+
+            echo "🔍 Checking AWS Region and Registry..."
+            echo "ECR_BACKEND_IMAGE: $ECR_BACKEND_IMAGE"
+            echo "ECR_REGISTRY: $ECR_REGISTRY"
+          
+            echo "🔓 Logging in to AWS ECR..."
+            aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY || {
+              echo "❌ AWS ECR login failed!"
+              exit 1
+            }
+
+            echo "Cloning Source Code Repo..."
+            if [ ! -d "app" ]; then
+              git clone https://github.com/SkyeKD/bookshop_2.git app
+            else
+              cd app && git pull && cd ..
+            fi
+
+            cd app || exit 1 
+
+
+            echo "Updating docker-compose-qa.yml..."
+            envsubst < docker-compose-qa.yml > docker-compose-qa.yml.tmp && mv docker-compose-qa.yml.tmp docker-compose-qa.yml
+
+            echo "🚀 Pulling and Deploying Docker Containers..."
+            sudo docker-compose -f docker-compose-qa.yml pull
+            sudo docker-compose -f docker-compose-qa.yml down
+            sudo docker-compose -f docker-compose-qa.yml up -d
+            sudo docker image prune -f
+
+            echo "✅ Deployment completed successfully!"
+          EOF
  
 
       - name: Terminate EC2 Instance
