@@ -356,9 +356,18 @@ jobs:
             envsubst < docker-compose-qa.yml > docker-compose-qa.yml.tmp && mv docker-compose-qa.yml.tmp docker-compose-qa.yml
 
             echo "🚀 Pulling and Deploying Docker Containers..."
-            sudo docker-compose -f docker-compose-qa.yml pull
-            sudo docker-compose -f docker-compose-qa.yml down
-            sudo docker-compose -f docker-compose-qa.yml up -d
+            # sudo docker-compose -f docker-compose-qa.yml pull
+            # sudo docker-compose -f docker-compose-qa.yml down
+            # sudo docker-compose -f docker-compose-qa.yml up -d
+            
+            VITE_BOOK_APP_API_BASE_URL=https://bestkexin.live/api \
+             sudo docker-compose -f docker-compose-qa.yml pull
+
+            VITE_BOOK_APP_API_BASE_URL=https://bestkexin.live/api \
+              sudo docker-compose -f docker-compose-qa.yml down
+
+            VITE_BOOK_APP_API_BASE_URL=https://bestkexin.live/api \
+              sudo docker-compose -f docker-compose-qa.yml up -d
             sudo docker image prune -f
 
             echo "✅ Deployment completed successfully!"
