@@ -329,7 +329,8 @@ jobs:
             export DB_USER="${{ secrets.RDS_USERNAME }}"
             export DB_PASSWORD="${{ secrets.RDS_PASSWORD }}"
             export DB_NAME="${{ secrets.RDS_DBNAME }}"
-
+            export DB_PORT=3306
+         
             echo "🔍 Checking AWS Region and Registry..."
             echo "ECR_BACKEND_IMAGE: $ECR_BACKEND_IMAGE"
             echo "ECR_REGISTRY: $ECR_REGISTRY"
@@ -380,64 +381,3 @@ jobs:
             echo "❌ No EC2 Instance ID file found, skipping termination!"
             exit 1
           fi
-
-
-
-server {
-    listen 80;
-    server_name bestkexin.live www.bestkexin.live;
-
-    location / {
-        proxy_pass http://localhost:3000;  # 前端服务
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /books {
-        proxy_pass http://localhost:8800;  # 后端服务
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-
-server {
-    listen [::]:443 ssl ipv6only=on; # managed by Certbot
-    listen 443 ssl; # managed by Certbot
-    server_name bestkexin.live www.bestkexin.live;
-
-    ssl_certificate /etc/letsencrypt/live/bestkexin.live/fullchain.pem; # managed by Certbot
-    ssl_certificate_key /etc/letsencrypt/live/bestkexin.live/privkey.pem; # managed by Certbot
-    # include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /api/ {
-        proxy_pass http://localhost:8080/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-
-server {
-    listen 80;
-    listen [::]:80;
-    server_name bestkexin.live www.bestkexin.live;
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
