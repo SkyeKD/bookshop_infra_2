@@ -48,7 +48,10 @@ jobs:
       - name: Build and Start Containers Using Docker Compose
         run: |
           cd app
+          # docker compose up -d
+          VITE_BOOK_APP_API_BASE_URL=https://bestkexin.live/api \
           docker compose up -d
+
           sleep 20
 
       - name: Configure AWS Credentials
@@ -359,7 +362,7 @@ jobs:
             # sudo docker-compose -f docker-compose-qa.yml pull
             # sudo docker-compose -f docker-compose-qa.yml down
             # sudo docker-compose -f docker-compose-qa.yml up -d
-            
+
             VITE_BOOK_APP_API_BASE_URL=https://bestkexin.live/api \
              sudo docker-compose -f docker-compose-qa.yml pull
 
