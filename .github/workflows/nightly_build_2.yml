@@ -49,8 +49,14 @@ jobs:
         run: |
           cd app
           # docker compose up -d
-          VITE_BOOK_APP_API_BASE_URL=https://bestkexin.live/api \
-          docker compose up -d
+          # VITE_BOOK_APP_API_BASE_URL=https://bestkexin.live/api \
+          # docker compose up -d
+
+          docker build -t frontend \
+            --build-arg VITE_BOOK_APP_API_BASE_URL=https://bestkexin.live/api \
+            -f frontend/Dockerfile ./frontend
+          
+          docker build -t backend -f backend/Dockerfile ./backend
 
           sleep 20
 
@@ -85,11 +91,14 @@ jobs:
 
           docker tag $FRONTEND_IMAGE_ID $FRONTEND_REPO:$TIMESTAMP
           docker tag $FRONTEND_IMAGE_ID $FRONTEND_REPO:$IMAGE_TAG
-          docker push --all-tags $FRONTEND_REPO
 
           docker tag $BACKEND_IMAGE_ID $BACKEND_REPO:$TIMESTAMP
           docker tag $BACKEND_IMAGE_ID $BACKEND_REPO:$IMAGE_TAG
-          docker push --all-tags $BACKEND_REPO
+
+          docker push $FRONTEND_REPO:$TIMESTAMP
+          docker push $FRONTEND_REPO:$IMAGE_TAG
+          docker push $BACKEND_REPO:$TIMESTAMP
+          docker push $BACKEND_REPO:$IMAGE_TAG
 
       
       - name: Setup SSH Key
