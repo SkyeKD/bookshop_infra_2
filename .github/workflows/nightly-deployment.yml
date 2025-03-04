@@ -126,30 +126,3 @@ jobs:
             curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
             echo "✅ Smoke Test Passed!"
           EOF
-    # echo "🔍 Checking if backend is running..."
-    # curl -sSf http://localhost:8800/books || (echo "❌ Backend not responding!" && exit 1)
-      
-      # - name: Stop and Remove All Docker Containers
-      #   run: |
-      #     ssh -o StrictHostKeyChecking=no -i ~/.ssh/bookshop-key.pem ubuntu@${{ env.EC2_PUBLIC_IP }} << 'EOF'
-      #       echo "🛑 Stopping all running containers..."
-      #       docker stop $(docker ps -aq) || echo "No running containers"
-      #       docker rm $(docker ps -aq) || echo "No containers to remove"
-            
-      #       echo "🧹 Cleaning up Docker system..."
-      #       docker system prune -a -f
-      #       docker volume prune -f
-      #       docker network prune -f
-      #     EOF
-
-      # end EC2
-      # - name: Terminate EC2 Instance
-      #   if: always()
-      #   run: |
-      #     INSTANCE_ID=$(cat ec2-instance-id.env)
-      #     if [ -z "$INSTANCE_ID" ]; then
-      #       echo "❌ No EC2 Instance ID found, skipping termination."
-      #     else
-      #       aws ec2 terminate-instances --instance-ids $INSTANCE_ID
-      #       echo "✅ EC2 Instance $INSTANCE_ID Terminated!"
-      #     fi
